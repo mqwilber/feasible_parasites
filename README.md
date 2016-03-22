@@ -1,6 +1,6 @@
 # feasible_parasites
 
-This repo contains the code necessary to reproduce the results found in `docs/feasible_manuscript.pdf` and `docs/supplementary_material.pdf`.  The data used for this analysis is not yet publicly distributable, so this repository **does not** contain the entire workflow from data to compiled manuscript. Rather, we have included a `data/archival/dummy_data.csv` file that allows the various scripts to be executed, but produces nonsensical results (because the dummy data is not real).  Therefore, do not be surprised when executing `run_all.sh` produces completely different results than what you see in `docs/*` A more detailed description of each folder in this repo is given below
+This repo contains the code necessary to reproduce the results found in `docs/feasible_manuscript.pdf` and `docs/supplementary_material.pdf`.  The data used for this analysis is not yet publicly distributable, so this repository **does not** contain the entire workflow from data to compiled manuscript. Rather, we have included a `data/archival/dummy_data.csv` file that allows the various scripts to be executed, but produces dummy results (because the dummy data is not real).  Therefore, do not be surprised when executing `run_all.sh` produces completely different results than what you see in `docs/*` (because it should!). A more detailed description of each folder in this repo is given below
 
 `code`
 
