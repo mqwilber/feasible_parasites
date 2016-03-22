@@ -7,7 +7,7 @@ This repo contains the code necessary to reproduce the results found in `docs/fe
 - `agg_fxns.py`: This script contains the necessary functions for testing whether a given host-parasite distribution follows a top-down or bottom-up model.
 - `test_agg_fxns.py`: The script provides unit tests for the functions in `agg_fxns.py`
 - `manuscript_analysis_*.py`: Scripts that use `agg_fxns.py` to perform top-down and bottom-up analyses on parasite data. Each script contains a description of what it does at the beginning of the script.
-- `manuscript_plots.*`: Either a Python script or IPython Notebook for making the figures include in `docs/*`
+- `manuscript_plots.ipynb`: IPython Notebook for making the figures from the analysis output
 - `run_all.sh`: A bash script that shows the order in which the manuscript analysis scripts should be run. Executing this script will run the analysis on the dummy data. 
 
 `docs`
