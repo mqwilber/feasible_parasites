@@ -6,11 +6,11 @@ import macroeco.compare as comp
 import scipy.stats as stats
 import macroeco.models as mod
 import multiprocessing as mp
-import logging
-logging.basicConfig(filename="randomization.log", level=logging.DEBUG,
-                                        format='%(asctime)s %(message)s')
+# import logging
+# logging.basicConfig(filename="randomization.log", level=logging.DEBUG,
+#                                         format='%(asctime)s %(message)s')
 
-logger = logging.getLogger("my logger")
+# logger = logging.getLogger("my logger")
 
 """
 Description
@@ -220,6 +220,12 @@ def feasible_mixture(ph_vect):
 
 if __name__ == '__main__':
 
+    import logging
+    logging.basicConfig(filename="randomization.log", level=logging.DEBUG,
+                                        format='%(asctime)s %(message)s')
+
+    logger = logging.getLogger("my logger")
+
     #1. Load in data and define names
     para_data = pd.read_csv("../data/archival/dummy_data.csv")
     hosts = ["BUBO", "PSRE", "RACA", "TATO", "TAGR"] # hosts to include
@@ -231,8 +237,8 @@ if __name__ == '__main__':
               'feasible': feasible_mixture} # Add in feasible set
 
     #2. Figure out which sites are overaggregated
-    stat = "AD_p_val"
-    crit = "<0.1"
+    stat = "r_sq_one_to_one"
+    crit = "<0.5"
     over_agg_sites = get_over_agg_sites(stat=stat, crit=crit)
     over_agg_sites.sort()
 

@@ -324,6 +324,52 @@ class TestAlgorithms(TestCase):
         test_var = np.var(np.median(pihm1[500:, :], axis=0))
         assert_equal(fs_var > test_var, True)
 
+    def test_metropolis_hastings_alg_feasible2(self):
+        """ 
+        For a variety of different combinations, test that the metropolis
+        hastings algorithm can return the the maxent predictions after
+        drawing from the feasible set. This unit test makes a plot.
+        In the plot, you should see 9 figures and you would generally expect
+        the points in all the figures to fall along the 1:1 line (the dashed
+        black line). This means that taking the median of the 
+        """
+
+        Ps = [500, 200, 50]
+        Hs = [30, 20, 10]
+
+        fig, axes = plt.subplots(3, 3, figsize=(10, 10), sharex=True, sharey=True)
+        axes = axes.ravel()
+
+        count = 0
+        for P in Ps:
+            for H in Hs:
+                me_pred = nbd_mixture([(P, H)])
+                me_mh, _ = constrained_ordered_set(P, H, maxent_weight_fxn,
+                                feasible_proposal, feasible_ratio,
+                                samples=4000,
+                                sampling="metropolis-hastings")
+
+                # Drop the burn in values
+                mh_pred = np.median(me_mh[-2000:, :], axis=0)
+
+                # Plot the predictions
+                axes[count].plot(np.log(me_pred + 1), np.log(mh_pred + 1), 'o')
+                vals = np.linspace(0, 6, num=100)
+                axes[count].plot(vals, vals, '--', color='black')
+                axes[count].set_xlabel("Analytical ln(RAD + 1) for\ncomposition model", size=10)
+                axes[count].set_ylabel("Weighted feasible set\nln(RAD + 1) for composition model", size=10)
+                axes[count].set_xlim((-0.5, 6.5))
+                axes[count].set_ylim((-0.5, 6.5))
+                axes[count].text(0.5, 0.9, "P={0}, H={1}".format(P, H),
+                                 ha='center', transform=axes[count].transAxes)
+
+                count = count + 1
+
+        # Save the plot
+        plt.tight_layout()
+        plt.savefig("me_mh_compare.png")
+
+
     def test_metropolis_hastings_alg_binomial(self):
         # Test that the metropolis-hasting algorithm with a binomial proposal
         # gives predicted order statistics
@@ -504,6 +550,60 @@ class TestMixture(TestCase):
         # Save plot
         fig.savefig("mixture_test.png")
 
+    def test_mixed_vs_median_feas(self):
+        """ Testing whether concatenating vectors vs. mixing random macrostates
+        leads to equivalent predictions for the feasible set.
+
+        In other words, I could generate a heterogeneity prediction by two 
+        approaches
+        1) Sample each heterogeneity group 200 times, glue all of these samples
+        together (i.e. appending arrays to make the feasible set) and then
+        find the center of this feasible set.
+        2) I could take a sample from a group, sort it and find the center and
+        do this for each group and then append these predicted vectors 
+        together.
+
+        Question: Do these give the same answer?
+        Answer: Yes. Why? Because expectation is a linear operator!
+        """
+        NUM = 500
+        ph_vects = [[(200, 20)],
+                   [(100, 10), (550, 20)],
+                   [(10, 30), (20, 12), (8, 3)],
+                   [(500., 30), (30., 10), (10, 20), (5, 4)]]
+
+        # Approach 1
+        feas_preds = [feasible_mixture(ph_vect, samples=NUM,
+                            center="median")[1] for ph_vect in ph_vects]
+
+        fig, axes = plt.subplots(2, 2, figsize=(10, 8))
+        axes = axes.ravel()
+
+        for i, ph_vect in enumerate(ph_vects):
+            all_preds = []
+
+            # Approach 2
+            for P, H in ph_vect:
+
+                _, pred = feasible_mixture([(P, H)], samples=NUM,
+                                                    center="median")
+
+                all_preds.append(pred)
+
+            exp_preds = np.sort(np.concatenate(all_preds))[::-1]
+
+            # Plot the results comparing the approaches
+            axes[i].plot(np.log(feas_preds[i] + 1), np.log(exp_preds + 1), 'o')
+
+            vals = np.linspace(np.min(np.log(feas_preds[i] + 1)),
+                                np.max(np.log(feas_preds[i] + 1)), num=100)
+            axes[i].plot(vals, vals, '--', color="black")
+            axes[i].set_xlabel("ln(Predictions from approach 1 + 1)")
+            axes[i].set_ylabel("ln(Predictions from approach 2 + 1)")
+
+        plt.tight_layout()
+        fig.savefig("feas_order.png")
+
 class TestEM(TestCase):
 
     def test_em_algor_geom1(self):
@@ -527,7 +627,7 @@ class TestEM(TestCase):
             # Check that the EM algorithm identifies the correct means
             assert_array_almost_equal(res[0], [mu1, mu2], decimal=0)
 
-            # Check that the EM algorithm identifies the correct proportions
+            # Check that the EM algorithm identifies the correct propotions
             assert_array_almost_equal(res[1], [0.5, 0.5], decimal=1)
 
     def test_em_algor_geom2(self):

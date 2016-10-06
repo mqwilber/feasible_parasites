@@ -16,8 +16,8 @@ from scipy.special import gammaln
 try:
     import pypartitions as pyp # Package obtained from https://github.com/klocey/partitions
 except ImportError:
-    print("Feasible set package not found. Download from https://github.com/klocey/partitions\n" +
-                "and set to PYTHONPATH")
+    print("Feasible set package not found. Download from\n" +
+                "https://github.com/klocey/partitions and set to PYTHONPATH")
 
 # A lot of folks won't have rpy2
 try:
@@ -234,6 +234,74 @@ def poisson_mixture(para_host_vec, finite=True):
     return np.sort(np.concatenate(mixed_sample))[::-1]
 
 
+def weighted_feasible_mixture(para_host_vec, samples=200, center="median",
+                                        model="composition"):
+    """
+    """
+
+    if model == "partition":
+        sorted_feas, pred = feasible_mixture(para_host_vec, samples=samples,
+                                                center=center)
+    elif model == "composition":
+
+        mixed_sample = []
+        para_host_vec = convert_to_int(para_host_vec)
+
+        for ph in para_host_vec:
+
+            if ph[0] == 0:  # Hosts don't have any parasites
+
+                tfeas = np.zeros(ph[1] * samples).reshape(samples, ph[1])
+                mixed_sample.append(tfeas)
+
+            else:
+
+                tfeas_mh, _ = constrained_ordered_set(ph[0], ph[1],
+                                maxent_weight_fxn,
+                                feasible_proposal, feasible_ratio,
+                                samples=samples*2,
+                                sampling="metropolis-hastings")
+                # Discard the first half as burn in
+                post_samps = tfeas_mh[(samples + 1):, :]
+                mixed_sample.append(post_samps)
+
+        mix_feas = np.concatenate(mixed_sample, axis=1)
+        sorted_feas = np.sort(mix_feas)[:, ::-1]
+
+    elif model == "multinomial":
+
+        mixed_sample = []
+        para_host_vec = convert_to_int(para_host_vec)
+
+        for ph in para_host_vec:
+
+            if ph[0] == 0: # Hosts don't have any parasites
+
+                tfeas = np.zeros(ph[1] * samples).reshape(samples, ph[1])
+                mixed_sample.append(tfeas)
+
+            else:
+
+                tfeas = np.random.multinomial(ph[0], np.repeat(1 / ph[1], ph[1]), 
+                                            size=samples)
+                mixed_sample.append(tfeas)
+
+        mix_feas = np.concatenate(mixed_sample, axis=1)
+        sorted_feas = np.sort(mix_feas)[:, ::-1]
+
+    else:
+        raise TypeError("{0} not a recognized model".format(model))
+
+    if center == "mean":
+        med_feas = np.mean(sorted_feas, axis=0)
+    elif center == "median":
+        med_feas = np.median(sorted_feas, axis=0)
+    else:
+        med_feas = stats.mode(sorted_feas, axis=0)[0].flatten()
+
+    return sorted_feas, med_feas
+
+
 def cart_analysis(para_data, y_name, x_names, print_tree=False,
         max_leaf_nodes=None, use_R=False, prune=True, cp=0.0001, minsplit=2,
         min_samples_leaf=2, filename="output.dot"):
@@ -411,7 +479,8 @@ print_r_tree = """
 
 def get_feasible_predictions_from_data(para_data, para_name, initial_split,
                 samples=200, para_min=20, host_min=6, output=True,
-                center="mean", logger=None, large_samples=200):
+                center="mean", logger=None, large_samples=200,
+                fs_type="partition"):
     """
     For each unique group given by initial_split (Host ID,  Site, etc),
     function calculates the feasible set prediction from the data. Returns
@@ -439,11 +508,19 @@ def get_feasible_predictions_from_data(para_data, para_name, initial_split,
         If True, a progress message is printed after each iteration of the for
         loop.
     center : str
-        Either "mean" or "median". Specifies what center of the feasible set
+        Either "mean", "median", or "mode". Specifies what center of the feasible set
         to return
     logger: tuple or None
         Tuple of logger, int. int is printed in the logging. This analysis can
         take awhile so it is helpful to log the results.
+    fs_type: str
+        Specifies which type of feasible set to sample. The options are
+            `partition`: Unlabeled hosts and unlabeled parasites. Macrostates
+                         are equally weighted (e.g. Locey and White 2013).
+                         This is the default
+            `composition`: Labeled hosts and unlabeled parasites 
+                          (maximum entropy model)
+            `multinomial`: Labeled hosts and labeled parasites
 
     Returns
     -------
@@ -476,17 +553,184 @@ def get_feasible_predictions_from_data(para_data, para_name, initial_split,
                 H = len(site_data)
 
                 if P < 1000: # If P too big use less samples!
-                    full, pred = feasible_mixture([(P, H)], samples=samples,
-                        center=center)
+                    use_samps = samples
                 else:
-                    full, pred = feasible_mixture([(P, H)], samples=large_samples,
-                        center=center)
+                    use_samps = large_samples
 
+                if fs_type == "partition":
+
+                    full, pred = feasible_mixture([(P, H)], samples=use_samps,
+                                center=center)
+
+                elif fs_type == "composition":
+
+                    # Could speed this up with exact composition algorithm
+                    mh_me, mh_rj = constrained_ordered_set(int(P), int(H),
+                                        maxent_weight_fxn,
+                                        feasible_proposal, feasible_ratio,
+                                        samples=2*use_samps,
+                                        sampling="metropolis-hastings")
+
+                    full = mh_me[-use_samps:, :]
+                    # full = np.sort(mod.cnbinom.rvs(P / H, 1, P, size=(use_samps, H)))[:, ::-1]
+
+                    pred = np.median(full, axis=0)
+
+                elif fs_type == "multinomial":
+
+                    mult_samps = np.random.multinomial(P, np.repeat(1 / H, H), 
+                                                size=use_samps)
+                    full = np.sort(mult_samps, axis=1)[:,::-1]
+                    pred = np.median(full, axis=0)
+
+                else:
+                    raise ValueError("{0} not recognized".format(fs_type))
 
                 feas_predictions[site] = (full, pred,
                             np.sort(np.array(site_data[para_name]))[::-1])
 
     return feas_predictions
+
+
+def get_single_host_predictions_from_data(para_data, para_name, initial_split,
+                samples=200, para_min=20, host_min=6, output=True,
+                center="mean", logger=None, large_samples=200,
+                fs_type="partition"):
+    """
+    For each unique group given by initial_split (Host ID,  Site, etc),
+    function calculates the feasible set prediction from the data. Returns
+    a dictionary where the keys are the unique identifiers from the column
+    initial_split and they look up a tuple that contains three items:
+
+    1. The full feasible set prediction
+    2. The mean/median/mode feasible set prediction
+    3. The observed data
+
+    Parameters
+    -----------
+    para_data: DataFrame
+        Pandas dataframe with parasite data
+    para_name : str
+        Name of the parasite column in the data set
+    initial_split : str
+        Name of the column in the dataset where the initial split will occur
+    samples : int
+        Number of feasible set samples
+    para_min : int
+        The minimum number of parasites an entity (Site or host) must contain
+        to be included in the analysis
+    output : bool
+        If True, a progress message is printed after each iteration of the for
+        loop.
+    center : str
+        Either "mean", "median", or "mode". Specifies what center of the feasible set
+        to return
+    logger: tuple or None
+        Tuple of logger, int. int is printed in the logging. This analysis can
+        take awhile so it is helpful to log the results.
+    fs_type: str
+        Specifies which type of feasible set to sample. The options are
+            `partition`: Unlabeled hosts and unlabeled parasites. Macrostates
+                         are equally weighted (e.g. Locey and White 2013).
+                         This is the default
+            `composition`: Labeled hosts and unlabeled parasites 
+                          (maximum entropy model)
+            `multinomial`: Labeled hosts and labeled parasites
+
+    Returns
+    -------
+    : dict
+        See above for description
+
+    """
+
+    # Get unique values in the initial split column.  Often will be site
+    sites = para_data[initial_split].unique()
+
+    feas_predictions = {}
+
+    for site in sites:
+
+        site_data = para_data[para_data[initial_split] == site]
+
+        if len(site_data) >= host_min:
+
+            if site_data[para_name].sum() >= para_min:
+
+                if output:
+                    print("Getting feasible set for {0} for {1}".format(site, para_name))
+
+                if logger != None:
+                    logger[0].info("Year {0}: Getting feasible set for {1} for {2}".format(logger[1], site, para_name))
+
+                # Feasible set predictions
+                P = site_data[para_name].sum()
+                H = len(site_data)
+
+                if P < 1000: # If P too big use less samples!
+                    use_samps = samples
+                else:
+                    use_samps = large_samples
+
+                if fs_type == "partition":
+
+                    full, pred = feasible_mixture([(P, H)], samples=use_samps,
+                                center=center)
+
+                    # Approximate the pmf
+                    model_pmf = feasible_pmf_approx(full)
+
+                    #  Sample single hosts from feasible set.
+                    full_flat = full.ravel()
+                    fs_draws = full_flat[np.random.randint(0, len(full_flat), H * use_samps)]
+                    full = fs_draws.reshape(full.shape)
+
+                elif fs_type == "composition":
+
+                    full = mod.cnbinom.rvs(P / H, 1, P, size=(use_samps, H))
+                    model_pmf = mod.cnbinom(P / H, 1, P).pmf
+
+                elif fs_type == "multinomial":
+
+                    full = stats.binom.rvs(P, 1 / H, size=(use_samps, H))
+                    model_pmf = stats.binom(P, 1 / H).pmf
+
+                else:
+                    raise ValueError("{0} not recognized".format(fs_type))
+
+                feas_predictions[site] = (full, model_pmf,
+                            np.sort(np.array(site_data[para_name])))
+
+    return feas_predictions
+
+
+def feasible_pmf_approx(full):
+    """
+    Approximate the single host pmf from a sampled feasible set
+
+    Uses basic interpolation. Not using KDE because the distributions are
+    highly right skewed.
+
+    Parameters
+    ----------
+    full : 2D array
+        A 2D array of samples or macrostates
+
+    Returns
+    -------
+    : function
+        A approximate PMF for the samples given.
+    """
+
+    # Calculate approx pmf for feasible set
+    pmf = pd.value_counts(full.ravel()) / len(full.ravel())
+    pmf = pmf.sort_index()
+
+    def pmf_fxn(x):
+        return(np.interp(x, pmf.index.values, pmf.values))
+
+    return(pmf_fxn)
+
 
 def get_model_predictions_from_data(para_data, para_name, initial_split,
                 para_min=20, host_min=6, output=True, finite=False,
@@ -516,19 +760,19 @@ def get_model_predictions_from_data(para_data, para_name, initial_split,
         The minimum number of hosts necessary for an entity (SITE) to be
         included in the analysis
     output : str
-        If True, a tring is printed to track progress
+        If True, a string is printed to track progress
     finite : bool
         If True, a finite prediction will be used. This will be Binomial for
         the bottom-up model and cnbinom for the top-down
     model : str
-        Either top-down (Geommetric/Geom-Gamma) or bottom-up
+        Either "top-down" (Geommetric/Geom-Gamma/Feasible Set) or "bottom-up"
         (Poisson/Poisson-Gamma).
     heterogeneity : True
         If True, the corresponding top-down or bottom-up model is mixed on
         a gamma-distribution. This results in a negative binomial for the
         bottom-up predictions and a geometric-gamma distribution for the
         top-down. In practice, these are very similar so we always use the
-        negative binomial
+        negative binomial or finite negative binomial.
 
     Returns
     -------
@@ -794,7 +1038,7 @@ def extract_var_importance(stats_dict, vect_ids, model):
 
 def plot_vectors(all_data, all_pred, one_to_one=True, rsqs=None, savename=None,
     proportion=None, ax=None, ci95=None, importance=None, ylim=(-0.5, 3.5),
-    xlim=(-0.5, 3.5)):
+    xlim=(-0.5, 3.5), gray=False):
     """
     Given observed (all_data) and predicted (all_pred) vectors combine and plot
     in the White et al (2012) style
@@ -856,8 +1100,12 @@ def plot_vectors(all_data, all_pred, one_to_one=True, rsqs=None, savename=None,
     idx = z.argsort()
     x, y, z = x[idx], y[idx], z[idx]
 
-    ax.scatter(np.log10(x + 1), np.log10(y + 1), c=z, s=50,
+    if not gray:
+        ax.scatter(np.log10(x + 1), np.log10(y + 1), c=z, s=50,
                         edgecolor='', alpha=0.2)
+    else:
+        ax.scatter(np.log10(x + 1), np.log10(y + 1), s=50,
+                        c=z, alpha=0.8, edgecolor="black", cmap="Greys")
 
     vals = np.linspace(0, np.max((x, y)), 100)
     ax.plot(np.log10(vals + 1), np.log10(vals + 1), '--', color="black")
@@ -874,9 +1122,9 @@ def plot_vectors(all_data, all_pred, one_to_one=True, rsqs=None, savename=None,
             size=15, horizontalalignment="center", transform=ax.transAxes)
 
 
-    ax.set_xlabel("log(Predicted + 1)")
+    ax.set_xlabel("ln(Predicted + 1)")
 
-    ax.set_ylabel("log(Observed + 1)")
+    ax.set_ylabel("ln(Observed + 1)")
 
     if ylim != None:
         ax.set_ylim(ylim)
@@ -895,7 +1143,7 @@ def plot_vectors(all_data, all_pred, one_to_one=True, rsqs=None, savename=None,
     if proportion is not None:
 
         ax.text(0.5, 0.02,
-            "# of Sites = {0}, Proportion that fit model = {1:.2f}".format(*proportion),
+            "# of Sites = {0}, Proportion not rejected = {1:.2f}".format(*proportion),
             ha="center",
             transform=ax.transAxes)
 
@@ -1307,6 +1555,16 @@ def maxent_weight_fxn(vect):
 
     return b / D
 
+def maxent_count(vect):
+    """Just computes b from equation above"""
+    P = np.sum(vect)
+    H = len(vect)
+
+    # Calculate the denominator
+    hs = np.array(pd.Series(vect).value_counts())
+    b = np.exp(gammaln(H + 1) - np.sum(gammaln(hs + 1)))
+
+    return b
 
 def binomial_weight_fxn(vect):
     """
@@ -1548,6 +1806,7 @@ def geom_mixed(x, pis, mus):
     pmf = np.sum([tp * geom(x, tmu) for tp, tmu in zip(pis, mus)])
     return pmf
 
+
 def geom_mixed_pmf(x, pis, mus):
     """ Vectorized version of geom_mixed """
     x = np.atleast_1d(x)
@@ -1568,170 +1827,39 @@ def geom_mixed_cdf(x, pis, mus):
 
 def full_log_likelihood(data, pis, mus, dist):
     """
-    Full likelihood for a mixture model with geometric distributions
+    Full likelihood for a mixture models.
 
     Parameters
     ----------
     data : array-like
-
     pis : array-like
         Prior probability of g groups
-
     mus : array-like
         Means of g groups
-
     dist : name
-        "geom" or "pois"
-    """
+        "geom", "pois", "feasible"
 
+    Returns
+    -------
+    : float
+        The log-likelihood of the mixture model
+
+
+    """
     data = np.atleast_1d(data)
 
-    if dist=="geom":
-        return np.sum([np.log(geom_mixed(td, pis, mus)) for td in data])
-
-    elif dist=="pois":
-        return np.sum([np.log(pois_mixed(td, pis, mus)) for td in data])
-
-    else:
-        return np.nan
-
-
-def em_algorithm(data, initial_mus, initial_ps, dist, tol=0.1, max_iter=100):
-    """
-    EM algorithm for either a poisson or geometric distribution
-
-    Parameters
-    ----------
-    data : array-like
-        Data vector with unknown grouping structure
-    initial_mus : array-like
-        Initial guess for group means
-    initial_ps : array-like
-        Initial guess of group proportions
-    dist : str
-        Either 'pois' (Poisson) or 'geom'
-    tol : float
-        The tolerance, measured as the difference between to sucessive
-        likelihood calculations in the EM algorithm.  If the difference is less
-        than tol the algorithm stops and the values are returned.  A lower tol
-        will run the algorithm for longer.
-    max_iter : int
-        Maximum number of iterations of the algorithm
-
-    Return
-    ------
-    : tuple
-        1. Array of predicted means
-        2. Array of predicted group probabilities
-        3. Full likelihood at the last iteration
-        4. Total number of iterations
-
-    Notes
-    -----
-
-    Algorithm adopted from McLaughlin and Peel 2000
-
-    """
-
-    # Set the number of groups
-    groups = len(initial_ps)
-    n = len(data)
-
-    # Calculate the initial full likelihood
-    full_like = full_log_likelihood(data, initial_ps, initial_mus, dist)
-
-    # Get the taus
-    taus = _get_taus(data, initial_ps, initial_mus, dist)
-
-    # Calculate updated pis
-    updated_pis = _get_updated_pis(taus, n)
-
-    # Calculate updated mus
-    updated_mus = _get_updated_mus(taus, data)
-
-    # Calculate update logliklihood
-    updated_full_like = full_log_likelihood(data, updated_pis, updated_mus,
-                                        dist)
-
-    count = 0
-
-    while updated_full_like - full_like > tol:
-
-        if count > (max_iter):
-
-            print("Maximum number of iterations ({0}) exceeded".format(max_iter))
-            break
-
-        full_like = full_log_likelihood(data, updated_pis, updated_mus, dist)
-
-        taus = _get_taus(data, updated_pis, updated_mus, dist)
-
-        # Calculate updated pis
-        updated_pis = _get_updated_pis(taus, n)
-
-        # Calculate updated mus
-        updated_mus = _get_updated_mus(taus, data)
-
-        # Calculate update logliklihood
-        updated_full_like = full_log_likelihood(data, updated_pis,
-                                        updated_mus, dist)
-
-        count += 1
-
-    return updated_mus, updated_pis, updated_full_like, count
-
-
-def _get_taus(data, pis, mus, dist):
-    """
-    Calculate the taus for the em algorithm
-    """
-
     if dist == "geom":
-        fxn = geom
+
+        ll = np.sum([np.log(geom_mixed(td, pis, mus)) for td in data])
+
+    elif dist == "pois":
+
+        ll = np.sum([np.log(pois_mixed(td, pis, mus)) for td in data])
     else:
-        fxn = pois
+        ll = np.nan
 
-    groups = len(pis)
-    taus = np.empty((len(data), len(pis)))
+    return ll
 
-    # Compute all initial taus
-    for g in xrange(groups):
-        taus[:, g] = pis[g] * fxn(data, mus[g])
-
-    sums = taus.sum(axis=1)
-
-    taus_full = np.array([taus[:, i] / sums for i
-                in xrange(taus.shape[1])]).reshape(taus.shape[::-1]).T
-
-    return taus_full
-
-def _get_updated_pis(taus, n):
-    """
-    Calcuates the updated group probabilities given taus and n, where n is the
-    number of data points
-
-    """
-
-    denom_row_sums = taus.sum(axis=0) # Vector of length groups
-
-    pis = denom_row_sums / n
-
-    return pis
-
-def _get_updated_mus(taus, data):
-    """
-    Calcuates updates mus given taus and data
-    """
-
-    groups = taus.shape[1]
-    denom_row_sums = taus.sum(axis=0) # Vector of length groups
-
-    num_row_sums = np.sum(taus *
-                np.tile(data, groups).reshape(taus.shape[::-1]).T, axis=0)
-
-    mus = num_row_sums / denom_row_sums
-
-    return mus
 
 def bic(loglike, params, n):
     """
@@ -1739,9 +1867,25 @@ def bic(loglike, params, n):
     """
     return -2 * loglike + params * np.log(n)
 
-def aic(loglike, params, n):
+def aic(loglike, k, n, corrected=True):
     """
     AIC criteria
+
+    Parameters
+    -----------
+    loglike : float
+        log-likelihood
+    k : float
+        Number of estimated parameters
+    n : float
+        Sample size
+    corrected : bool
+        If True used AICc, otherwise uses AIC.
     """
-    return -2 * loglike + params * 2
+
+    if corrected:
+        return 2 * k + -2 * loglike + (2 * k * (k + 1)) / (n - k - 1)
+    else:
+        return -2 * loglike + k * 2
+
 

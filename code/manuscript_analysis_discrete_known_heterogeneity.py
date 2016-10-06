@@ -6,11 +6,11 @@ import macroeco.compare as comp
 import scipy.stats as stats
 import macroeco.models as mod
 import multiprocessing as mp
-import logging
-logging.basicConfig(filename="discrete_known_hetero.log", level=logging.DEBUG,
-                                        format='%(asctime)s %(message)s')
+# import logging
+# logging.basicConfig(filename="discrete_known_hetero.log", level=logging.DEBUG,
+#                                         format='%(asctime)s %(message)s')
 
-logger = logging.getLogger("my logger")
+# logger = logging.getLogger("my logger")
 SAMPLES = 1000 # Samples for feasible set
 
 """
@@ -368,6 +368,12 @@ def fill_feasible_1(vects_dict, stats_dict):
 
 if __name__ == '__main__':
 
+    import logging
+    logging.basicConfig(filename="discrete_known_hetero.log", level=logging.DEBUG,
+                                        format='%(asctime)s %(message)s')
+
+    logger = logging.getLogger("my logger")
+
     # Load in the data
     para_data = pd.read_csv("../data/archival/dummy_data.csv")
 
@@ -380,7 +386,7 @@ if __name__ == '__main__':
     # Different types of heterogeneity analysis. See get_predictors fxn for
     # description of types. These specify the predictors to use in the
     # regression tree analysis
-    predictor_types = ["all_para"] #["only_svl", "only_para", "all_total", "only_total"]
+    predictor_types = ["only_svl", "only_para", "all_total", "only_total"]
     #["all_para", "only_svl", "only_para", "all_total", "only_total"]
 
     splitby = "sitename" # SITE string

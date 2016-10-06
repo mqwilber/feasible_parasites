@@ -5,6 +5,7 @@ import pandas as pd
 import multiprocessing as mp
 import statsmodels.api as sm
 from scipy import stats
+from macroeco.models import cnbinom
 import logging
 logging.basicConfig(filename="parasite_mortality.log", level=logging.DEBUG,
                                         format='%(asctime)s %(message)s')
@@ -14,9 +15,9 @@ logger = logging.getLogger("my logger")
 """
 Description
 -----------
-This script calculates the predicted top-down feasible set for a given host
-Rib combination given a laboratory estimated host-survival curve. It is taking
-into account parasite-induced host mortality in a top-down context.
+This script calculates the predicted constraint-based model for a given host
+Rib combination given a laboratory estimated host-survival curve.  The 
+model is now accounting for Rib as an additional constraint.
 
 Author
 ------
@@ -24,9 +25,10 @@ Mark Wilber, UCSB, 2016
 
 """
 
+
 def multiprocess_pihm(processes, grouped_data):
     """
-    Multiprocessing function
+    Multiprocessing function.
 
     Parameters
     ----------
@@ -41,7 +43,6 @@ def multiprocess_pihm(processes, grouped_data):
         Each tuple contains an index, observed vector, and predicted vector
 
     """
-
     pool = mp.Pool(processes=processes)
 
     results = [pool.apply_async(_get_pihm_pred,
@@ -58,10 +59,14 @@ def multiprocess_pihm(processes, grouped_data):
 
     return results
 
+
 def _get_pihm_pred(host, dist_nm, a, b, weight_fxn, proposal_fxn,
                         proposal_ratio, samps, obs, pred, sorter):
     """
-    Work horse function for the multiprocessing
+    Work horse function for the multiprocessing.
+
+    Calculates the mortality-constrained model using a Metropolis-Hastings
+    algorithm.
 
     Parameters
     ----------
@@ -87,8 +92,16 @@ def _get_pihm_pred(host, dist_nm, a, b, weight_fxn, proposal_fxn,
     Returns
     -------
     : tuple
+        sorter: a index for sorting
+        host: the host name
+        dist_nm: the name of the distribution being analyzed
+        pred_cent: The predicted center of the mortality-constrained feasible
+                   set
+        obs: The observed host-parasite distribution
+        float : the acceptance rate of the MH algorithm
+        base_pmf : The pmf of dist_nm with out pihm
+        pihm_pmf : The pmf of dist_nm with pihm
     """
-
     P = np.sum(obs)
     H = len(obs)
 
@@ -97,6 +110,24 @@ def _get_pihm_pred(host, dist_nm, a, b, weight_fxn, proposal_fxn,
     else:
         SAMPS = samps[1]
 
+    # Also need to compute base model for AICc test later
+    if dist_nm == "feasible":
+
+        base_full, pred = agg.feasible_mixture([(P, H)], samples=SAMPS / 2,
+                                                            center="median")
+        base_pmf = agg.feasible_pmf_approx(base_full)
+
+    elif dist_nm == "trun_geometric":
+
+        base_pmf = cnbinom(P / H, 1, P).pmf
+
+    elif dist_nm == "binomial":
+
+        base_pmf = stats.binom(P, 1 / H).pmf
+    else:
+        raise TypeError("{0} is not a recognized name".format(dist_nm))
+
+    base_loglike = np.sum(np.log(base_pmf(np.array(obs))))
 
     pred_matrix, rej = agg.constrained_ordered_set(P, H,
                         lambda x: weight_fxn(x, a, b),
@@ -108,13 +139,18 @@ def _get_pihm_pred(host, dist_nm, a, b, weight_fxn, proposal_fxn,
 
     # Get center after burn-in
     pred_cent = np.median(pred_matrix[int(.5 * SAMPS):, :], axis=0)
+    pihm_pmf = agg.feasible_pmf_approx(pred_matrix[int(.5 * SAMPS):, :])
+    pihm_loglike = np.sum(np.log(pihm_pmf(np.array(obs))))
 
-    return((sorter, host, dist_nm, pred_cent, obs, 1 - (rej / SAMPS)))
+    return((sorter, host, dist_nm, pred_cent, obs, 1 - (rej / SAMPS), 
+                base_loglike, pihm_loglike))
+
 
 def get_host_survival_curves(host_names):
     """
-    Runs the GLM and gets the host survival curves. Only implemented for BUBO,
-    PSRE, and TATO.
+    Run the GLM and gets the host survival curves.
+
+    Only implemented for BUBO, PSRE, and TATO.
 
     Parameters
     ----------
@@ -182,7 +218,7 @@ if __name__ == '__main__':
                 # Estimated survival curve data
                 a = host_names_dict[host][0]
                 b = host_names_dict[host][1]
-                samps = (2000, 2000) # (1000, 200)
+                samps = (3000, 3000) # (1000, 200)
 
                 grouped_data.append((host, dist_nm, a, b, wf, pf, pr, samps, obs, pred))
 
@@ -192,7 +228,8 @@ if __name__ == '__main__':
 
     # Save results as a dataframe.
     results_df = pd.DataFrame(multi_res,
-        columns=['sorter', 'host', 'dist', 'pred', 'observed', 'accept'])
+        columns=['sorter', 'host', 'dist', 'pred', 'observed', 'accept', 
+                 'base_loglike', 'pihm_loglike'])
 
     pd.to_pickle(results_df, "../results/pickled_results/parasite_mortality_vects.pkl")
     logging.info("Completed analysis")

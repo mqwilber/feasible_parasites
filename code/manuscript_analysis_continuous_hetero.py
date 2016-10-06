@@ -18,12 +18,8 @@ Description
 -----------
 
 Analyzing Pieter Johnson's macroparasite data across multiple years,
-host species, and parasites. Fitting a model with continuous heterogeneity
-(i.e. a Negative Binomial model and Finite Negative Binomial model)
-to each distribution. This is standard practice when analyzing host-parasite
-distributions.  These distributions can then be analyzed like any of the
-distributions with continuous heterogeneity computed in
-manuscript_analysis_discrete_known_heterogeneity.
+host species, and parasites. In this analysis, focusing on continuous heterogeneity in terms of a Negative
+Binomial distribution.
 
 Data description
 ----------------

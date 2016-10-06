@@ -19,7 +19,7 @@ Description
 
 Analyzing Pieter Johnson's macroparasite data across multiple years,
 host species, and parasites. This script is performing the analysis using just
-the top-down and bottom-up models with no additional heterogeneity added.
+the constraint-based models with no additional heterogeneity added.
 For more information see feasible_manuscript.tex.
 
 Data description
@@ -109,28 +109,28 @@ def _get_td_bu_predictions_by_year(year_data, hosts,
                 host_min=host_min, output=False, center="median",
                 logger=(logger, year), large_samples=1000)
 
-            # Get finite top-down model predictions
+            # Get finite constraint-based model predictions
             top_down_pred_finite = \
                     agg.get_model_predictions_from_data(sub_data,
                         parasite, splitby, para_min=para_min,
                         host_min=host_min, model="top-down", output=False,
                         finite=True, heterogeneity=False)
 
-            # Get finite bottom-up predictions
+            # Get finite process-based predictions
             bottom_up_pred_finite = \
                     agg.get_model_predictions_from_data(sub_data,
                         parasite, splitby, para_min=para_min,
                         host_min=host_min, model="bottom-up", output=False,
                         finite=True, heterogeneity=False)
 
-            # Get infinite top-down model predictions
+            # Get infinite constraint-based model predictions
             top_down_pred_infinite = \
                     agg.get_model_predictions_from_data(sub_data,
                         parasite, splitby, para_min=para_min,
                         host_min=host_min, model="top-down", output=False,
                         finite=False, heterogeneity=False)
 
-            # Get infinite bottom-up predictions
+            # Get infinite process-based predictions
             bottom_up_pred_infinite = \
                     agg.get_model_predictions_from_data(sub_data,
                         parasite, splitby, para_min=para_min,
